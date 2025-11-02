@@ -1,0 +1,26 @@
+FROM python:3.12-slim
+
+# Install network tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tcpdump tcpreplay iproute2 iputils-ping openssl \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy scripts
+COPY h3_server.py .
+
+# Install aioquic for HTTP/3 support
+RUN pip install --no-cache-dir aioquic
+
+# Auto-generate self-signed certificate
+RUN mkdir -p /certs && \
+    openssl req -x509 -newkey rsa:2048 -days 365 -nodes \
+      -keyout /certs/key.pem -out /certs/cert.pem \
+      -subj "/CN=www.test.local"
+
+EXPOSE 4433/udp
+
+CMD ["python", "h3_server.py", "--certificate", "/certs/cert.pem", "--private-key", "/certs/key.pem"]
+
+

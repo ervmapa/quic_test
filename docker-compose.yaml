@@ -1,0 +1,64 @@
+version: "3.8"
+
+services:
+  quic-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: quic-server
+    networks:
+      testnet:
+        ipv4_address: 172.20.0.2
+    volumes:
+      - ./captures:/captures
+    command: >
+      python h3_server.py
+      --certificate /certs/cert.pem
+      --private-key /certs/key.pem
+
+  quic-client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: quic-client
+    depends_on:
+      - quic-server
+    networks:
+      testnet:
+        ipv4_address: 172.20.0.3
+    extra_hosts:
+      - "www.test.local:172.20.0.2"
+      - "api.test.local:172.20.0.2"
+      - "files.test.local:172.20.0.2"
+      - "video.test.local:172.20.0.2"
+      - "news.test.local:172.20.0.2"
+      - "server1.test.local:172.20.0.2"
+      - "server2.test.local:172.20.0.2"
+      - "server3.test.local:172.20.0.2"
+      - "server4.test.local:172.20.0.2"
+      - "server5.test.local:172.20.0.2"
+      - "server6.test.local:172.20.0.2"
+      - "server7.test.local:172.20.0.2"
+      - "server8.test.local:172.20.0.2"
+      - "server9.test.local:172.20.0.2"
+      - "server10.test.local:172.20.0.2"
+      - "server11.test.local:172.20.0.2"
+      - "server12.test.local:172.20.0.2"
+      - "server13.test.local:172.20.0.2"
+      - "server14.test.local:172.20.0.2"
+      - "server15.test.local:172.20.0.2"
+      - "server16.test.local:172.20.0.2"
+      - "server17.test.local:172.20.0.2"
+      - "server18.test.local:172.20.0.2"
+      - "server19.test.local:172.20.0.2"
+      - "server20.test.local:172.20.0.2"
+    volumes:
+      - ./captures:/captures
+
+networks:
+  testnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+

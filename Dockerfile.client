@@ -1,0 +1,11 @@
+# Prebuilt curl with HTTP/3 (ngtcp2 + nghttp3 + quictls)
+FROM ymuski/curl-http3:latest
+
+# Install tcpdump for capturing and network testing
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tcpdump iputils-ping && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /data
+CMD ["sleep", "infinity"]
+
