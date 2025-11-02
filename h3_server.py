@@ -102,14 +102,14 @@ class H3Server(QuicConnectionProtocol):
         for i in range(total):
             hdr = f"pkt-{i:05d}\n".encode()
             pad = 1300 - len(hdr)
-            # 👇 Explicitly set end_stream=False for every chunk
+            # Explicitly set end_stream=False for every chunk
             self._http.send_data(sid, hdr + payload[:pad], end_stream=False)
             self.transmit()
             await asyncio.sleep(interval)
             if time.time() - t0 >= dur:
                 break
 
-        # 👇 Final empty frame closes the stream
+        # Final empty frame closes the stream
         self._http.send_data(sid, b"", end_stream=True)
         self.transmit()
         print(f"[rate_send] Sent {total} packets @ {rate}pps for {dur}s")
