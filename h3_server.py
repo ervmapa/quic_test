@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-HTTP/3 (QUIC) test server using aioquic >=1.0.
+HTTP/3 (QUIC) test server using aioquic
 
 Endpoints:
   /                     -> hello
   /echo                 -> echo POST/PUT body
-  /100pps_10s           -> send 1250B packets at 100pps for 10s
-  /50pps_1min           -> send 1250B packets at 50pps for 60s
+  /100pps_10s           -> steady 1250B packets at 100pps for 10s
+  /50pps_1min           -> steady 1250B packets at 50pps for 60s
+  /100pps_1min_3burst   -> burst mode: up to 3s bursts, random 0–3s idle gaps
 """
 
 import argparse
@@ -14,6 +15,7 @@ import asyncio
 import os
 import re
 import time
+import random
 from typing import Dict
 
 from aioquic.asyncio import QuicConnectionProtocol, serve
@@ -28,6 +30,7 @@ class H3Server(QuicConnectionProtocol):
         super().__init__(*args, **kwargs)
         self._http: H3Connection | None = None
         self._buffers: Dict[int, bytearray] = {}
+        self.last_path: str = "/"
 
     def quic_event_received(self, event: QuicEvent) -> None:
         if self._http is None:
@@ -45,12 +48,16 @@ class H3Server(QuicConnectionProtocol):
         hdrs = dict(ev.headers)
         method = hdrs.get(b":method", b"GET").decode()
         path = hdrs.get(b":path", b"/").decode()
+        self.last_path = path
 
-        m = re.match(r"/(\d+)pps_(\d+)(s|min)", path)
+        # Match steady or burst URIs like /100pps_10s or /100pps_1min_3burst
+        m = re.match(r"/(\d+)pps_(\d+)(s|min)(?:_(\d+)burst)?", path)
         if method == "GET" and m:
             rate = int(m.group(1))
             dur = int(m.group(2)) * (60 if m.group(3) == "min" else 1)
-            asyncio.ensure_future(self._rate_send(sid, rate, dur))
+            burst = int(m.group(4)) if m.group(4) else 0
+            asyncio.ensure_future(self._rate_send(sid, rate, dur, burst))
+            print(f"[request] rate={rate}pps, dur={dur}s, burst={burst}s")
             return
 
         if method == "GET" and path == "/":
@@ -84,8 +91,13 @@ class H3Server(QuicConnectionProtocol):
         self._http.send_data(sid, body, end_stream=True)
         self.transmit()
 
-    async def _rate_send(self, sid: int, rate: int, dur: int):
-        """Send 1250-byte QUIC stream chunks at a fixed rate for the given duration."""
+    async def _rate_send(self, sid: int, rate: int, dur: int, burst_time: int = 0):
+        """
+        Send 1250-byte QUIC stream chunks at a fixed rate for the given duration.
+
+        If burst_time > 0, packets are sent in bursts lasting up to burst_time seconds,
+        then the server stays silent randomly between 0–burst_time seconds.
+        """
         assert self._http
         hdrs = [
             (b":status", b"200"),
@@ -95,31 +107,48 @@ class H3Server(QuicConnectionProtocol):
         self._http.send_headers(sid, hdrs, end_stream=False)
         self.transmit()
 
-        # QUIC payload target per datagram (RFC 9000 safe limit)
         quic_payload_size = 1250
-        interval = 1.0 / rate
-        total = rate * dur
         filler = b"X" * quic_payload_size
-
         t0 = time.time()
-        for i in range(total):
-            hdr = f"pkt-{i:05d}\n".encode()
-            pad_len = quic_payload_size - len(hdr)
-            if pad_len < 0:
-                pad_len = 0
-            chunk = hdr + filler[:pad_len]
+        sent = 0
 
-            self._http.send_data(sid, chunk, end_stream=False)
-            self.transmit()
+        print(f"[rate_send] Starting {('BURST' if burst_time else 'STEADY')} mode: "
+              f"{rate}pps for {dur}s (1250B each, burst={burst_time}s)")
 
-            await asyncio.sleep(interval)
-            if time.time() - t0 >= dur:
-                break
+        while time.time() - t0 < dur:
+            if burst_time > 0:
+                # Send burst of packets
+                burst_len = min(burst_time, dur - (time.time() - t0))
+                burst_packets = int(rate * burst_len)
+
+                for i in range(burst_packets):
+                    hdr = f"pkt-{sent+i:05d}\n".encode()
+                    pad_len = max(0, quic_payload_size - len(hdr))
+                    chunk = hdr + filler[:pad_len]
+                    self._http.send_data(sid, chunk, end_stream=False)
+                    self.transmit()
+
+                sent += burst_packets
+
+                # Random silent period between bursts (0–burst_time)
+                gap = random.uniform(0, burst_time)
+                print(f"[burst] sent {burst_packets} packets, sleeping {gap:.2f}s")
+                await asyncio.sleep(gap)
+            else:
+                # Steady mode: constant rate
+                hdr = f"pkt-{sent:05d}\n".encode()
+                pad_len = max(0, quic_payload_size - len(hdr))
+                chunk = hdr + filler[:pad_len]
+                self._http.send_data(sid, chunk, end_stream=False)
+                self.transmit()
+                sent += 1
+                await asyncio.sleep(1.0 / rate)
 
         # End the stream
         self._http.send_data(sid, b"", end_stream=True)
         self.transmit()
-        print(f"[rate_send] Sent {total} packets @ {rate}pps for {dur}s (1250B each)")
+        print(f"[rate_send] Sent {sent} packets total ({rate}pps target, dur={dur}s, burst={burst_time}s)")
+
 
 async def main():
     parser = argparse.ArgumentParser()
