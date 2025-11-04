@@ -5,8 +5,8 @@ HTTP/3 (QUIC) test server using aioquic >=1.0.
 Endpoints:
   /                     -> hello
   /echo                 -> echo POST/PUT body
-  /100pps_10s           -> send 1300B packets at 100pps for 10s
-  /50pps_1min           -> send 1300B packets at 50pps for 60s
+  /100pps_10s           -> send 1250B packets at 100pps for 10s
+  /50pps_1min           -> send 1250B packets at 50pps for 60s
 """
 
 import argparse
@@ -85,7 +85,7 @@ class H3Server(QuicConnectionProtocol):
         self.transmit()
 
     async def _rate_send(self, sid: int, rate: int, dur: int):
-        """Send 1300-byte packets at a fixed rate for the given duration."""
+        """Send 1250-byte QUIC stream chunks at a fixed rate for the given duration."""
         assert self._http
         hdrs = [
             (b":status", b"200"),
@@ -95,30 +95,36 @@ class H3Server(QuicConnectionProtocol):
         self._http.send_headers(sid, hdrs, end_stream=False)
         self.transmit()
 
+        # QUIC payload target per datagram (RFC 9000 safe limit)
+        quic_payload_size = 1250
         interval = 1.0 / rate
         total = rate * dur
-        payload = b"X" * 1290
+        filler = b"X" * quic_payload_size
+
         t0 = time.time()
         for i in range(total):
             hdr = f"pkt-{i:05d}\n".encode()
-            pad = 1300 - len(hdr)
-            # Explicitly set end_stream=False for every chunk
-            self._http.send_data(sid, hdr + payload[:pad], end_stream=False)
+            pad_len = quic_payload_size - len(hdr)
+            if pad_len < 0:
+                pad_len = 0
+            chunk = hdr + filler[:pad_len]
+
+            self._http.send_data(sid, chunk, end_stream=False)
             self.transmit()
+
             await asyncio.sleep(interval)
             if time.time() - t0 >= dur:
                 break
 
-        # Final empty frame closes the stream
+        # End the stream
         self._http.send_data(sid, b"", end_stream=True)
         self.transmit()
-        print(f"[rate_send] Sent {total} packets @ {rate}pps for {dur}s")
-
+        print(f"[rate_send] Sent {total} packets @ {rate}pps for {dur}s (1250B each)")
 
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--port", type=int, default=4433)
+    parser.add_argument("--port", type=int, default=443)
     parser.add_argument("--certificate", required=True)
     parser.add_argument("--private-key", required=True)
     args = parser.parse_args()

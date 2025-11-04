@@ -19,7 +19,7 @@ RUN mkdir -p /certs && \
       -keyout /certs/key.pem -out /certs/cert.pem \
       -subj "/CN=www.test.local"
 
-EXPOSE 4433/udp
+EXPOSE 443/udp
 
 CMD ["python", "h3_server.py", "--certificate", "/certs/cert.pem", "--private-key", "/certs/key.pem"]
 

@@ -3,7 +3,7 @@ FROM ymuski/curl-http3:latest
 
 # Install tcpdump for capturing and network testing
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    tcpdump iputils-ping && \
+    tcpdump iputils-ping vim && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /data

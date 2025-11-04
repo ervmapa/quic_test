@@ -34,15 +34,19 @@ Examples:
 /100pps_1min -> sends 100 packets per second for 1 minute
 /10pps_5s -> sends 10 packets per second for 5 seconds
 Packets are 1300 bytes each.
+curl -k --http3 https://server3.test.local/100pps_10s 
 
 Capturing QUIC traffic:
 
 Inside container:
-docker exec -it quic-server tcpdump -i eth0 -w /captures/quic_capture.pcap udp port 4433
+docker exec -it quic-server tcpdump -i eth0 -w /captures/quic_capture.pcap udp port 443
 
 On the host with real Ethernet headers:
 NETID=$(docker network ls | awk '/quic_test/ {print $1}')
-sudo tcpdump -i br-$NETID -w quic_real_eth.pcap udp port 4433
+sudo tcpdump -i br-$NETID -w quic_real_eth.pcap udp port 443
+
+tcpdump -i br-$(docker network ls | grep quic_test | awk '{print $1}')
+
 
 Output files appear in:
 /captures/converted/*.pcap

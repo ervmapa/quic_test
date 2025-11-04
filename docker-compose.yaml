@@ -11,6 +11,8 @@ services:
         ipv4_address: 172.20.0.2
     volumes:
       - ./captures:/captures
+    ports:
+      - "443:443/udp"
     command: >
       python h3_server.py
       --certificate /certs/cert.pem
